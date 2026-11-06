@@ -21,6 +21,23 @@
     { name: "Foreman", mv: 0, coin: 0, act: 2, draw: 0, cost: 6, copies: 3, cat: "act", val: 2, text: "Use a space, move 1, use a space, move 1" },
     { name: "Ledger", mv: 0, coin: 0, act: 0, draw: 2, cost: 4, copies: 3, cat: "draw", val: 2.5, text: "Draw 2 when drawn" },
     { name: "Layover", mv: 0, coin: 0, act: 1, draw: 0, cost: 0, copies: 0, cat: "act", val: 2.5, stay: true, text: "Use this space" },
+    // unique cards
+    { name: "Relay", mv: 1, coin: 0, act: 0, draw: 1, cost: 3, copies: 2, uniq: true, cat: "draw", val: 3, text: "Draw 1 when drawn. Move 1" },
+    { name: "Mentor", mv: 0, coin: 0, act: 1, draw: 1, cost: 5, copies: 2, uniq: true, cat: "act", val: 3.5, text: "Draw 1 when drawn. Use this space, then move 1" },
+    { name: "Momentum", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "momentum", cat: "mv2", val: 3, text: "Move 1, plus 1 per movement card already played this turn" },
+    { name: "Shortcut", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "shortcut", cat: "mv2", val: 2.5, text: "Move to the next Bazaar" },
+    { name: "Beeline", mv: 0, coin: 0, act: 0, draw: 0, cost: 5, copies: 2, uniq: true, spec: "beeline", cat: "mv3", val: 3.5, text: "Move to Start, if it is within 4 spaces" },
+    { name: "Smuggler", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, uniq: true, spec: "smuggler", cat: "cargo", val: 2, text: "+1 coin. Customs leaves your money alone this turn" },
+    { name: "Salvage", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, uniq: true, spec: "salvage", cat: "trash", val: 2.5, text: "Trash a card from your hand for its cost + 1 in coins" },
+    { name: "Remodel", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "remodel", cat: "trash", val: 3, text: "Trash a card from your hand and take a market card costing up to 3 more" },
+    { name: "Prospector", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "prospector", cat: "act", val: 3, text: "Gain 2 iron" },
+    { name: "Tithe", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, uniq: true, spec: "tithe", cat: "coin", val: 2, text: "+1 coin, plus 1 per player ahead of you" },
+    { name: "Victory Lap", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "lap", cat: "vp", val: 3, text: "+9 VP if you crossed this turn" },
+    { name: "Agent", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "agent", cat: "act", val: 3, text: "Use the next space ahead, without moving" },
+    { name: "Gold Bar", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, uniq: true, spec: "gold", cat: "coin", val: 2.5, text: "+3 coins, then trash this card" },
+    { name: "Ambush", mv: 0, coin: 0, act: 0, draw: 0, cost: 4, copies: 2, uniq: true, spec: "ambush", cat: "coin", val: 2.5, text: "+1 coin. Each opponent draws 1 fewer card next turn" },
+    { name: "Joker", mv: 0, coin: 0, act: 0, draw: 0, cost: 2, copies: 2, uniq: true, spec: "joker", cat: "mv1", val: 2, text: "+1 coin or move 1" },
+    { name: "Bookmark", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, uniq: true, spec: "bookmark", cat: "draw", val: 2.5, text: "When drawn, set this aside and draw 1 extra card next turn" },
   ];
   const ID = {};
   CARDS.forEach((c, i) => { ID[c.name] = i; });
@@ -99,11 +116,12 @@
     C: { name: "Exchange", text: "Gain 2 coins", options: [{ kind: "coin", n: 2 }] },
   };
   const CASUAL_SIGMA = 1, CASUAL_LINES = 40;
-  const F_FREE = 1, F_DONE = 2;
+  const F_FREE = 1, F_DONE = 2, F_SMUGGLE = 4, F_AMBUSH = 8;
+  const LAP_VP = 9, MIN_HAND = 3, BEELINE_RANGE = 4, REMODEL_UP = 3, PROSPECT_IRON = 2, GOLD_COINS = 3;
 
   // state fields (a plain array, so copying and de-duplicating during search stays cheap)
   const POS = 0, H = 1, PEND = 2, COINS = 3, IRON = 4, MOVED = 5, CROSSED = 6, PAY = 7, BOUGHT = 8, TRASHED = 9, PLAYED = 10,
-    LAST = 11, ACTS = 12, LOST = 13, NEW = 14, KINDS = 15, FLAGS = 16, PASSED = 17, MINES = 18, HCOIN = 19, BOUGHT_AT_CROSS = 20;
+    LAST = 11, ACTS = 12, LOST = 13, NEW = 14, KINDS = 15, FLAGS = 16, PASSED = 17, MINES = 18, HCOIN = 19, BOUGHT_AT_CROSS = 20, BONUS = 21, GAINED = 22;
 
   // ------------------------------------------------------------ random numbers
   function nextRand(o, key) {
@@ -147,7 +165,7 @@
     const g = { cfg, seed: seed | 0, round: 1, current: 0, rngS: (seed | 0) * 7 + 1, firstTaken: false, buysThisRound: [], over: false,
       players: [], market: { face: [], pile: [] }, log: [], turn: null, winners: null, phase: "perks" };
     const pile = [];
-    CARDS.forEach((c, i) => { for (let k = 0; k < c.copies; k++) pile.push(i); });
+    CARDS.forEach((c, i) => { if (!c.uniq || cfg.uniq) for (let k = 0; k < c.copies; k++) pile.push(i); });
     shuffle(pile, g, "rngS");
     g.market.face = pile.splice(0, 3);
     g.market.pile = pile;
@@ -156,7 +174,7 @@
       const deck = [ID.Scout, ID.Scout, ID.Scout, ID.Scout, ID.Pony, ID.Coin, ID.Coin, ID.Coin, ID.Coin, ID.Contract, ID.Layover];
       const p = { seat: i, name: seat.name, kind: seat.kind, rngS: (seed | 0) * 1000 + i, noiseS: (seed | 0) * 5000 + i + (options.noiseOffset || 0) * 977,
         offers: pool.slice(i * 3, (i + 1) * 3), plan: [], style: null, perks: [], pos: 0, deck, discard: [], vp: 0, coins: 0, iron: 0, owned: deck.length,
-        movesOwned: 5, coinsOwned: 4, trashedTotal: 0, buysSince: 0, turnsSince: 0, idle: 0, have: {}, jitter: [],
+        movesOwned: 5, coinsOwned: 4, malus: 0, extraDraw: 0, trashedTotal: 0, buysSince: 0, turnsSince: 0, idle: 0, have: {}, jitter: [],
         stats: { turns: 0, crossings: 0, pay: 0, dead: 0, stay: 0, moved: 0, options: 0, goal: 0, bought: 0, trashed: 0 } };
       deck.forEach((c) => { p.have[c] = (p.have[c] || 0) + 1; });
       shuffle(p.deck, p, "rngS");
@@ -233,7 +251,7 @@
         let left = 0;
         h.forEach((c) => { left += CARDS[c].coin; });
         st[TRASHED].forEach((c) => { left += CARDS[c].coin; });
-        return v * (st[HCOIN] - left);
+        return v * (st[HCOIN] - left + st[GAINED]);
       }
       case "patron1": return p.buysSince + st[BOUGHT].length > 0 ? v : 0;
       default: return 0;
@@ -271,8 +289,10 @@
         l[PAY] = payout(g, p, p.perks.concat(l[NEW]), node, l).total;
         l[BOUGHT_AT_CROSS] = l[BOUGHT].length;
       }
-      const c = customs(l[COINS], l[IRON], ironKept(p, l));
-      l[COINS] = c[0]; l[IRON] = c[1]; l[LOST] += c[2];
+      if (!(l[FLAGS] & F_SMUGGLE)) {
+        const c = customs(l[COINS], l[IRON], ironKept(p, l));
+        l[COINS] = c[0]; l[IRON] = c[1]; l[LOST] += c[2];
+      }
     }
     l[POS] = node;
     return l;
@@ -323,7 +343,7 @@
       if (v > 0) shop.push(i);
     });
     return { slot, cost, shop, wanted: p.plan.filter((x) => !p.perks.includes(x)), trash: trashValues(p),
-      trackPlayed: p.plan.includes("moves"), trackLast: p.plan.includes("last"), trackKinds: p.plan.includes("kinds"),
+      trackPlayed: p.plan.includes("moves") || !!g.cfg.uniq, trackLast: p.plan.includes("last"), trackKinds: p.plan.includes("kinds"),
       occ: g._occ || occupancy(g, p) };
   }
 
@@ -416,8 +436,8 @@
     return out;
   }
 
-  function localOpts(g, p, st, ctx, step) {
-    const tile = g.cfg.tiles[st[POS]];
+  function localOpts(g, p, st, ctx, step, at) {
+    const tile = g.cfg.tiles[at === undefined ? st[POS] : at];
     let out = [];
     for (const opt of SPACES[tile].options) {
       if (opt.kind === "iron") { const l = st.slice(); l[IRON] += opt.n; l[MINES] += 1; out.push(l); }
@@ -432,6 +452,80 @@
     return out;
   }
 
+  /* Salvage: the chosen card goes, and pays its cost + 1. */
+  function salvageState(base, x) {
+    const l = base.slice();
+    l[H] = removeOne(base[H], x);
+    l[TRASHED] = base[TRASHED].concat([x]);
+    const gain = CARDS[x].cost + 1;
+    l[COINS] += gain; l[GAINED] += gain;
+    return l;
+  }
+
+  /* Remodel: the chosen card goes, and a market card costing up to 3 more arrives for free. */
+  function remodelState(g, base, x, slot) {
+    const y = g.market.face[slot];
+    if (y === undefined || base[BOUGHT].includes(slot) || CARDS[y].cost > CARDS[x].cost + REMODEL_UP) return null;
+    const l = base.slice();
+    l[H] = removeOne(base[H], x);
+    l[TRASHED] = base[TRASHED].concat([x]);
+    l[BOUGHT] = base[BOUGHT].concat([slot]);
+    return l;
+  }
+
+  function moved(g, p, st, base, k, ctx) {
+    const l = advance(g, p, base, k, true, k, ctx.occ);
+    if (!ctx.trackPlayed) l[PLAYED] = st[PLAYED];
+    if (!ctx.trackLast) l[LAST] = st[LAST];
+    return l;
+  }
+
+  /* Every way a unique card with its own effect can be played. Salvage and Remodel list only what a bot would pick. */
+  function specialStates(g, p, st, c, ctx) {
+    const base = st.slice();
+    base[H] = removeOne(st[H], c);
+    trackedCard(st, ctx, c, base);
+    const d = boardOf(g).dist[st[POS]];
+    switch (CARDS[c].spec) {
+      case "momentum": return [moved(g, p, st, base, 1 + st[PLAYED], ctx)];
+      case "shortcut": return d.B > 0 ? [moved(g, p, st, base, d.B, ctx)] : [];
+      case "beeline": return d.L <= BEELINE_RANGE ? [moved(g, p, st, base, d.L, ctx)] : [];
+      case "smuggler": base[COINS] += 1; base[GAINED] += 1; base[FLAGS] |= F_SMUGGLE; return [base];
+      case "prospector": base[IRON] += PROSPECT_IRON; base[MINES] += 1; return [base];
+      case "tithe": {
+        const gain = 1 + g.players.filter((o) => o.vp > p.vp).length;
+        base[COINS] += gain; base[GAINED] += gain;
+        return [base];
+      }
+      case "lap": if (!st[CROSSED]) return []; base[BONUS] += LAP_VP; return [base];
+      case "agent": base[ACTS] += 1; return localOpts(g, p, base, ctx, false, (st[POS] + 1) % g.cfg.tiles.length);
+      case "gold": base[COINS] += GOLD_COINS; base[GAINED] += GOLD_COINS; base[TRASHED] = st[TRASHED].concat([c]); return [base];
+      case "ambush": base[COINS] += 1; base[GAINED] += 1; base[FLAGS] |= F_AMBUSH; return [base];
+      case "joker": {
+        const coin = base.slice();
+        coin[COINS] += 1; coin[GAINED] += 1;
+        return [coin, moved(g, p, st, base, 1, ctx)];
+      }
+      case "salvage": {
+        const out = [];
+        new Set(base[H]).forEach((x) => { if (CARDS[x].cost > 0 || (ctx.trash[x] || 0) > 0) out.push(salvageState(base, x)); });
+        return out;
+      }
+      case "remodel": {
+        const out = [];
+        new Set(base[H]).forEach((x) => {
+          g.market.face.forEach((y, slot) => {
+            if (!(ctx.slot[slot] > 0)) return;
+            const s = remodelState(g, base, x, slot);
+            if (s) out.push(s);
+          });
+        });
+        return out;
+      }
+      default: return [];
+    }
+  }
+
   function expand(g, p, st, ctx) {
     if (st[FLAGS] & F_DONE) return [];
     let out = [];
@@ -443,6 +537,7 @@
       seen[c] = true;
       if (CARDS[c].mv > 0) out.push(playMove(g, p, st, c, ctx));
       if (CARDS[c].act > 0) actCards.push(c);
+      if (CARDS[c].spec) out = out.concat(specialStates(g, p, st, c, ctx));
     }
     const bulk = h.filter((c) => CARDS[c].coin > 0);
     if (bulk.length) out.push(playCoins(st, bulk, ctx));
@@ -469,7 +564,7 @@
         const l = st.slice(); l[FLAGS] |= F_FREE;
         out = out.concat(buyOpts(g, p, l, ctx));
       }
-      if (g.cfg.freeAction && st[MOVED] > 0 && SPACES[tile].options.length) {
+      if (g.cfg.freeAction && SPACES[tile].options.length) {
         const l = st.slice(); l[FLAGS] |= F_FREE | F_DONE;
         out = out.concat(localOpts(g, p, l, ctx, false));
       }
@@ -480,14 +575,14 @@
   function startState(p, hand) {
     let hc = 0;
     hand.forEach((c) => { hc += CARDS[c].coin; });
-    return [p.pos, hand.slice().sort((a, b) => a - b), 0, p.coins, p.iron, 0, false, 0, [], [], 0, 0, 0, 0, [], 0, 0, 0, 0, hc, 0];
+    return [p.pos, hand.slice().sort((a, b) => a - b), 0, p.coins, p.iron, 0, false, 0, [], [], 0, 0, 0, 0, [], 0, 0, 0, 0, hc, 0, 0, 0];
   }
 
   function evaluate(g, p, st, ctx) {
     const q = p.style, cfg = g.cfg;
     const b = boardOf(g), d = b.dist[st[POS]];
-    let score = st[PAY] + q.w_move * st[MOVED];
-    if (cfg.threshold && p.vp + st[PAY] >= cfg.threshold) score += 1000;
+    let score = st[PAY] + st[BONUS] + q.w_move * st[MOVED];
+    if (cfg.threshold && p.vp + st[PAY] + st[BONUS] >= cfg.threshold) score += 1000;
     for (const i of st[BOUGHT]) score += ctx.slot[i];
     for (const c of st[TRASHED]) score += ctx.trash[c] || 0;
     score += q.perk_value * st[NEW].length;
@@ -498,7 +593,7 @@
     const dl = d.L;
     const dB = d.B === undefined ? 99 : d.B;
     let safe = funds;
-    if (!cfg.buyAny && dl < dB) {
+    if (!cfg.buyAny && dl < dB && !(st[FLAGS] & F_SMUGGLE)) {
       const keep = Math.min(iron, ironKept(p, st));
       const kept = Math.min(fc + (iron - keep) * IRON_VALUE, COIN_CAP) + keep * IRON_VALUE;
       safe = kept + 0.1 * (funds - kept);
@@ -535,7 +630,7 @@
       const v = st[i];
       s += (Array.isArray(v) ? v.join(",") : v) + "|";
     }
-    return s;
+    return s + st[BONUS] + "|" + st[GAINED];
   }
 
   function search(g, p, hand, ctx, cap, keep, collect) {
@@ -596,7 +691,7 @@
   function hypothetical(g, p, st) {
     const q = Object.assign({}, p);
     q.pos = st[POS]; q.coins = st[COINS]; q.iron = st[IRON];
-    q.vp = p.vp + st[PAY];
+    q.vp = p.vp + st[PAY] + st[BONUS];
     q.perks = p.perks.concat(st[NEW]);
     q.owned = p.owned - st[TRASHED].length + st[BOUGHT].length;
     q.trashedTotal = p.trashedTotal + st[TRASHED].length;
@@ -626,7 +721,7 @@
     if (!r.top || r.top.length <= 1) return r.best;
     let bestV = -1e18, pick = r.best;
     for (const st of r.top) {
-      let imm = st[PAY];
+      let imm = st[PAY] + st[BONUS];
       if (g.cfg.threshold && p.vp + imm >= g.cfg.threshold) imm += 1000;
       for (const i of st[BOUGHT]) imm += ctx.slot[i];
       for (const c of st[TRASHED]) imm += ctx.trash[c] || 0;
@@ -663,16 +758,25 @@
   /* Draws the hand. Cards that draw fire at once; Ledger then leaves the hand. */
   function beginTurn(g) {
     const p = g.players[g.current];
-    let hand = drawCards(p, HAND);
+    let hand = drawCards(p, Math.max(MIN_HAND, HAND - p.malus + p.extraDraw));
+    p.malus = 0;
+    p.extraDraw = 0;
     const inPlay = [];
     const drewFrom = [];
-    const pending = hand.filter((c) => CARDS[c].draw);
+    const firesWhenDrawn = (c) => CARDS[c].draw || CARDS[c].spec === "bookmark";
+    const pending = hand.filter(firesWhenDrawn);
     while (pending.length) {
       const c = pending.pop();
+      if (CARDS[c].spec === "bookmark") {
+        p.extraDraw++;
+        hand = removeOne(hand, c);
+        inPlay.push(c);
+        continue;
+      }
       const extra = drawCards(p, CARDS[c].draw);
       drewFrom.push(c);
       hand = hand.concat(extra);
-      extra.forEach((x) => { if (CARDS[x].draw) pending.push(x); });
+      extra.forEach((x) => { if (firesWhenDrawn(x)) pending.push(x); });
       if (!CARDS[c].mv && !CARDS[c].act && !CARDS[c].coin) {
         hand = removeOne(hand, c);
         inPlay.push(c);
@@ -710,7 +814,7 @@
     const s = p.stats;
     s.turns++;
     s.moved += st[MOVED];
-    const useful = st[CROSSED] || st[BOUGHT].length || st[NEW].length || st[TRASHED].length || st[MINES];
+    const useful = st[CROSSED] || st[BOUGHT].length || st[NEW].length || st[TRASHED].length || st[MINES] || st[BONUS];
     if (!useful) s.dead++;
     if (st[MOVED] === 0) s.stay++;
     p.idle = st[MOVED] || st[BOUGHT].length || st[TRASHED].length || st[MINES] || st[NEW].length ? 0 : p.idle + 1;
@@ -719,11 +823,12 @@
     left.forEach((c) => { remaining = removeOne(remaining, c); });
     st[TRASHED].forEach((c) => { const i = remaining.indexOf(c); if (i >= 0) remaining.splice(i, 1); });
     const summary = { seat: p.seat, name: p.name, round: g.round, from: t.startPos, to: st[POS], moved: st[MOVED], crossed: st[CROSSED], pay: st[PAY], perks: st[NEW].slice(),
-      bought: st[BOUGHT].map((i) => g.market.face[i]), trashed: st[TRASHED].slice(), mined: st[MINES] * 2, lost: st[LOST] };
+      bought: st[BOUGHT].map((i) => g.market.face[i]), trashed: st[TRASHED].slice(), mined: st[MINES] * 2, lost: st[LOST], bonus: st[BONUS], ambush: !!(st[FLAGS] & F_AMBUSH), played: t.hand.filter((c) => !left.includes(c) && CARDS[c].spec).filter((c, i, a) => a.indexOf(c) === i) };
     p.pos = st[POS];
     p.coins = st[COINS];
     p.iron = st[IRON];
     left.forEach((c) => { p.coins += CARDS[c].coin; });
+    p.vp += st[BONUS];
     if (st[CROSSED]) {
       s.crossings++;
       s.pay += st[PAY];
@@ -756,6 +861,7 @@
     });
     // cards bought after crossing count toward the next crossing, as the Patron card says
     p.buysSince += st[CROSSED] ? st[BOUGHT].length - st[BOUGHT_AT_CROSS] : st[BOUGHT].length;
+    if (st[FLAGS] & F_AMBUSH) g.players.forEach((o) => { if (o !== p) o.malus += 1; });
     g.log.push(summary);
     g.turn = null;
     g.current++;
@@ -828,9 +934,69 @@
         const seen = {};
         st[H].forEach((c) => { if (CARDS[c].act && !seen[c]) { seen[c] = true; out.push({ via: "card", card: c }); } });
       }
-      if (g.cfg.freeAction && st[MOVED] > 0 && !(st[FLAGS] & F_FREE)) out.push({ via: "free" });
+      if (g.cfg.freeAction && !(st[FLAGS] & F_FREE)) out.push({ via: "free" });
       return out;
     },
+    /* What a unique card with its own effect can do right now: { ok, note, choose }. */
+    specialInfo(g, c) {
+      const st = g.turn.state;
+      const k = CARDS[c];
+      const n = g.cfg.tiles.length;
+      const d = boardOf(g).dist[st[POS]];
+      const p = g.players[g.current];
+      const toLine = (steps) => steps >= d.L;
+      const go = (steps) => {
+        const crossing = toLine(steps) && !st[CROSSED];
+        return crossing ? `Crosses: +${human.previewSpecial(g, c, 0)[PAY]} VP` : `To ${SPACES[g.cfg.tiles[(st[POS] + steps) % n]].name}`;
+      };
+      const others = st[H].filter((x, i) => i !== st[H].indexOf(c)).length;
+      switch (k.spec) {
+        case "momentum": return { ok: true, note: go(1 + st[PLAYED]) };
+        case "shortcut": return d.B > 0 ? { ok: true, note: go(d.B) } : { ok: false, note: d.B === 0 ? "You are on a Bazaar" : "No Bazaar here" };
+        case "beeline": return d.L <= BEELINE_RANGE ? { ok: true, note: go(d.L) } : { ok: false, note: `Start is ${d.L} away` };
+        case "smuggler": return { ok: true, note: "+1 coin, skip Customs" };
+        case "prospector": return { ok: true, note: `Gain ${PROSPECT_IRON} iron` };
+        case "tithe": return { ok: true, note: `Bank ${1 + g.players.filter((o) => o.vp > p.vp).length} now` };
+        case "lap": return st[CROSSED] ? { ok: true, note: `+${LAP_VP} VP` } : { ok: false, note: "Cross first" };
+        case "agent": {
+          const tile = g.cfg.tiles[(st[POS] + 1) % n];
+          return SPACES[tile].options.length ? { ok: true, note: `Use ${SPACES[tile].name}` } : { ok: false, note: "Customs is next" };
+        }
+        case "gold": return { ok: true, note: `Bank ${GOLD_COINS}, then trash` };
+        case "ambush": return { ok: true, note: "+1 coin, shrink hands" };
+        case "joker": return { ok: true, note: "Coin or move", choose: true };
+        case "salvage": return others ? { ok: true, note: "Pick a card to sell", choose: true } : { ok: false, note: "No other cards" };
+        case "remodel": return others ? { ok: true, note: "Pick a card to trade", choose: true } : { ok: false, note: "No other cards" };
+        default: return { ok: false, note: "" };
+      }
+    },
+    previewSpecial(g, c, which) {
+      return specialStates(g, g.players[g.current], g.turn.state, c, humanCtx(g))[which];
+    },
+    /* Plays a unique card. `which` picks between Joker's outcomes: 0 is the coin, 1 is the move. */
+    special(g, c, which) {
+      if (done(g) || !g.turn.state[H].includes(c) || !CARDS[c].spec || !human.specialInfo(g, c).ok) return false;
+      return pushHuman(g, specialStates(g, g.players[g.current], g.turn.state, c, humanCtx(g))[which || 0]);
+    },
+    _spent(g, c) {
+      const st = g.turn.state;
+      if (done(g) || !st[H].includes(c)) return null;
+      const base = st.slice();
+      base[H] = removeOne(st[H], c);
+      base[KINDS] |= 1 << c;
+      return base;
+    },
+    salvage(g, c, x) {
+      const base = this._spent(g, c);
+      if (!base || CARDS[c].spec !== "salvage" || !base[H].includes(x)) return false;
+      return pushHuman(g, salvageState(base, x));
+    },
+    remodel(g, c, x, slot) {
+      const base = this._spent(g, c);
+      if (!base || CARDS[c].spec !== "remodel" || !base[H].includes(x)) return false;
+      return pushHuman(g, remodelState(g, base, x, slot));
+    },
+    remodelCap(c) { return CARDS[c].cost + REMODEL_UP; },
     freeBuyOpen(g) {
       const st = g.turn.state;
       if (done(g) || st[FLAGS] & F_FREE) return false;
@@ -847,6 +1013,10 @@
         l[PEND] = CARDS[token.card].act - 1;
         l[ACTS] += 1;
         l[KINDS] |= 1 << token.card;
+      } else if (token.via === "agent") {
+        l[H] = removeOne(st[H], token.card);
+        l[ACTS] += 1;
+        l[KINDS] |= 1 << token.card;
       } else if (token.via === "free") l[FLAGS] |= F_FREE | F_DONE;
       else if (token.via === "freebuy") l[FLAGS] |= F_FREE;
       return { p, l };
@@ -855,13 +1025,14 @@
       if (!s) return false;
       const p = g.players[g.current];
       const ctx = humanCtx(g);
-      const stays = token.via === "free" || token.via === "freebuy" || (token.via === "card" && CARDS[token.card].stay);
+      const stays = token.via === "free" || token.via === "freebuy" || token.via === "agent" || (token.via === "card" && CARDS[token.card].stay);
       const next = stays ? s : advance(g, p, s, 1, false, 0, ctx.occ);
       return pushHuman(g, next);
     },
     simple(g, token) { // Mine, Tailwind or Exchange
       const { p, l } = this._paid(g, token);
-      const opt = SPACES[g.cfg.tiles[l[POS]]].options[0];
+      const at = token.via === "agent" ? (l[POS] + 1) % g.cfg.tiles.length : l[POS];
+      const opt = SPACES[g.cfg.tiles[at]].options[0];
       const ctx = humanCtx(g);
       let s = null;
       if (opt.kind === "iron") { s = l; s[IRON] += opt.n; s[MINES] += 1; }
@@ -921,7 +1092,7 @@
     return g;
   }
 
-  return { CARDS, ID, PERKS, SPACES, STYLES, BASE_LAP, PERK_COST, COIN_CAP, FOUNDRY_KEEP, HAND, IRON_VALUE, TARGET_ROUNDS, F: { FREE: F_FREE, DONE: F_DONE },
-    S: { POS, H, PEND, COINS, IRON, MOVED, CROSSED, PAY, BOUGHT, TRASHED, PLAYED, LAST, ACTS, LOST, NEW, KINDS, FLAGS, PASSED, MINES, HCOIN },
+  return { CARDS, ID, PERKS, SPACES, STYLES, BASE_LAP, PERK_COST, COIN_CAP, FOUNDRY_KEEP, HAND, LAP_VP, IRON_VALUE, TARGET_ROUNDS, F: { FREE: F_FREE, DONE: F_DONE, SMUGGLE: F_SMUGGLE, AMBUSH: F_AMBUSH },
+    S: { POS, H, PEND, COINS, IRON, MOVED, CROSSED, PAY, BOUGHT, TRASHED, PLAYED, LAST, ACTS, LOST, NEW, KINDS, FLAGS, PASSED, MINES, HCOIN, BONUS, GAINED },
     fmt, newGame, setPlan, botPickPerks, beginTurn, botPlan, commitTurn, playBots, human, standings, payout, revive, startState, expand, makeCtx, boardOf, customs, payCoin, advance };
 });

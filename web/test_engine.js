@@ -116,10 +116,29 @@ const checks = {
     assert.strictEqual(g.turn.state[S.POS], 3);
     assert.strictEqual(g.turn.state[S.ACTS], 2);
   },
-  "free action needs movement, has no step and ends the turn"() {
+  "free action works without moving, has no step and ends the turn"() {
+    const g = game(["moves", "dist"], null, { pos: 2 });
+    turn(g, h("Scout", "Courier"));
+    const free = human.tokens(g).find((t) => t.via === "free");
+    assert(free);
+    human.simple(g, free);
+    assert.strictEqual(g.turn.state[S.POS], 2);
+    assert.strictEqual(g.turn.state[S.MOVED], 0);
+    assert.strictEqual(g.turn.state[S.IRON], 2);
+    assert.strictEqual(human.tokens(g).length, 0);
+    assert.strictEqual(human.move(g, ID.Scout), false);
+  },
+  "free action is not offered at customs, or on the sprint"() {
+    const g = game(["moves", "dist"], null, { pos: 0 });
+    turn(g, h("Scout"));
+    assert.strictEqual(human.tokens(g).length, 0);
+    const g2 = game(["moves", "dist"], { tiles: "SMRBMV", buyFree: true, freeAction: false }, { pos: 1 });
+    turn(g2, h("Scout"));
+    assert.strictEqual(human.tokens(g2).length, 0);
+  },
+  "free action also works after moving"() {
     const g = game(["moves", "dist"], null, { pos: 1 });
     turn(g, h("Scout", "Courier"));
-    assert.strictEqual(human.tokens(g).length, 0);
     human.move(g, ID.Scout);
     const free = human.tokens(g).find((t) => t.via === "free");
     assert(free);
@@ -228,6 +247,199 @@ const checks = {
     human.move(g2, ID.Courier);
     assert.strictEqual(g2.turn.state[S.PASSED], 0);
   },
+  "the market only holds unique cards in versions that use them"() {
+    const has = (g) => g.market.face.concat(g.market.pile).filter((c) => E.CARDS[c].uniq).length;
+    assert.strictEqual(has(game(["moves", "dist"])), 0);
+    assert.strictEqual(has(game(["moves", "dist"], { uniq: true })), 32);
+    assert.strictEqual(E.CARDS.filter((c) => c.uniq).length, 16);
+  },
+  "relay and mentor draw 1 when drawn and stay playable"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    const p = g.players[0];
+    p.deck = h("Scout", "Scout", "Scout", "Scout", "Scout", "Scout", "Relay", "Mentor", "Coin", "Coin").slice();
+    E.beginTurn(g);
+    assert.strictEqual(g.turn.hand.length, 7);
+    assert(g.turn.hand.includes(ID.Relay) && g.turn.hand.includes(ID.Mentor));
+    const g2 = game(["moves", "dist"], { uniq: true }, { pos: 2 });
+    turn(g2, h("Mentor"));
+    assert(human.simple(g2, human.tokens(g2)[0]));
+    assert.strictEqual(g2.turn.state[S.POS], 3);
+    assert.strictEqual(g2.turn.state[S.IRON], 2);
+  },
+  "momentum moves 1 plus 1 per movement card already played"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 1 });
+    turn(g, h("Scout", "Courier", "Momentum"));
+    human.move(g, ID.Scout);
+    human.move(g, ID.Courier);
+    assert(human.special(g, ID.Momentum));
+    assert.strictEqual(g.turn.state[S.MOVED], 6);
+    assert.strictEqual(g.turn.state[S.PLAYED], 3);
+  },
+  "shortcut reaches the next bazaar and beeline reaches start within 4"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 1 });
+    turn(g, h("Shortcut"));
+    assert(human.special(g, ID.Shortcut));
+    assert.strictEqual(E.boardOf(g).tiles[g.turn.state[S.POS]], "B");
+    const on = game(["moves", "dist"], { uniq: true }, { pos: 4 });
+    turn(on, h("Shortcut"));
+    assert.strictEqual(human.special(on, ID.Shortcut), false);
+    const near = game(["moves", "dist"], { uniq: true }, { pos: 4, perks: ["dist"] });
+    turn(near, h("Beeline"));
+    assert(human.special(near, ID.Beeline));
+    assert.strictEqual(near.turn.state[S.POS], 0);
+    assert.strictEqual(near.turn.state[S.PAY], 2 + 4);
+    const far = game(["moves", "dist"], { uniq: true }, { pos: 3 });
+    turn(far, h("Beeline"));
+    assert.strictEqual(human.special(far, ID.Beeline), false);
+  },
+  "smuggler keeps your money through customs for the rest of the turn"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 7, coins: 9, iron: 3 });
+    turn(g, h("Smuggler", "Scout"));
+    assert(human.special(g, ID.Smuggler));
+    human.move(g, ID.Scout);
+    assert.strictEqual(g.turn.state[S.COINS], 10);
+    assert.strictEqual(g.turn.state[S.IRON], 3);
+    assert.strictEqual(g.turn.state[S.LOST], 0);
+  },
+  "salvage sells a card for its cost plus 1"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    turn(g, h("Salvage", "Express", "Scout"));
+    assert.strictEqual(human.salvage(g, ID.Salvage, ID.Salvage), false);
+    assert(human.salvage(g, ID.Salvage, ID.Express));
+    const st = g.turn.state;
+    assert.strictEqual(st[S.COINS], 6);
+    assert.deepStrictEqual(st[S.TRASHED], h("Express"));
+    assert.deepStrictEqual(st[S.H], h("Scout"));
+    human.end(g);
+    assert(!g.players[0].discard.includes(ID.Express));
+    assert(g.players[0].discard.includes(ID.Salvage));
+  },
+  "remodel trades a card for a market card costing up to 3 more"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    g.market.face = h("Foreman", "Courier", "Express");
+    const before = g.players[0].owned;
+    turn(g, h("Remodel", "Scout", "Coin"));
+    assert.strictEqual(human.remodel(g, ID.Remodel, ID.Scout, 0), false);
+    assert(human.remodel(g, ID.Remodel, ID.Scout, 1));
+    human.end(g);
+    assert.strictEqual(g.players[0].owned, before);
+    assert.strictEqual(g.players[0].have[ID.Courier], 1);
+    assert.strictEqual(g.players[0].have[ID.Scout], 3);
+  },
+  "prospector and tithe give what they say"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 0 });
+    g.players[1].vp = 10; g.players[2].vp = 10;
+    turn(g, h("Prospector", "Tithe"));
+    assert(human.special(g, ID.Prospector));
+    assert.strictEqual(g.turn.state[S.IRON], 2);
+    assert(human.special(g, ID.Tithe));
+    assert.strictEqual(g.turn.state[S.COINS], 3);
+  },
+  "victory lap needs a crossing and adds 9 VP"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 7 });
+    turn(g, h("Victory Lap", "Scout"));
+    assert.strictEqual(human.special(g, ID["Victory Lap"]), false);
+    human.move(g, ID.Scout);
+    assert(human.special(g, ID["Victory Lap"]));
+    human.end(g);
+    assert.strictEqual(g.players[0].vp, 2 + 9);
+  },
+  "agent uses the next space without moving, and cannot use customs"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 1 });
+    turn(g, h("Agent"));
+    assert(human.simple(g, { via: "agent", card: ID.Agent }));
+    assert.strictEqual(g.turn.state[S.POS], 1);
+    assert.strictEqual(g.turn.state[S.IRON], 2);
+    assert.strictEqual(g.turn.state[S.ACTS], 1);
+    const edge = game(["moves", "dist"], { uniq: true }, { pos: 7 });
+    turn(edge, h("Agent"));
+    assert.strictEqual(human.specialInfo(edge, ID.Agent).ok, false);
+  },
+  "gold bar pays 3 and is trashed"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    const p = g.players[0];
+    p.have[ID["Gold Bar"]] = 1; p.owned += 1;
+    turn(g, h("Gold Bar"));
+    assert(human.special(g, ID["Gold Bar"]));
+    assert.strictEqual(g.turn.state[S.COINS], 3);
+    const owned = p.owned;
+    human.end(g);
+    assert.strictEqual(p.owned, owned - 1);
+    assert.strictEqual(p.trashedTotal, 1);
+    assert(!p.discard.includes(ID["Gold Bar"]));
+  },
+  "ambush shrinks other hands by 1, and never below 3"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    turn(g, h("Ambush"));
+    assert(human.special(g, ID.Ambush));
+    assert.strictEqual(g.turn.state[S.COINS], 1);
+    human.end(g);
+    assert.strictEqual(g.players[0].malus, 0);
+    assert.strictEqual(g.players[1].malus, 1);
+    E.beginTurn(g);
+    assert.strictEqual(g.turn.hand.length, 4);
+    const g2 = game(["moves", "dist"], { uniq: true });
+    g2.players[0].malus = 3;
+    g2.players[0].deck = h("Scout", "Scout", "Scout", "Scout", "Scout");
+    E.beginTurn(g2);
+    assert.strictEqual(g2.turn.hand.length, 3);
+    assert.strictEqual(g2.players[0].malus, 0);
+  },
+  "joker is a coin or a move"() {
+    const g = game(["moves", "dist"], { uniq: true }, { pos: 1 });
+    turn(g, h("Joker"));
+    assert(human.special(g, ID.Joker, 0));
+    assert.strictEqual(g.turn.state[S.COINS], 1);
+    assert.strictEqual(g.turn.state[S.POS], 1);
+    const g2 = game(["moves", "dist"], { uniq: true }, { pos: 1 });
+    turn(g2, h("Joker"));
+    assert(human.special(g2, ID.Joker, 1));
+    assert.strictEqual(g2.turn.state[S.POS], 2);
+    assert.strictEqual(g2.turn.state[S.COINS], 0);
+  },
+  "bookmark sets itself aside and adds a card next turn"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    const p = g.players[0];
+    p.deck = h("Scout", "Scout", "Scout", "Scout", "Scout", "Scout", "Scout", "Coin", "Coin", "Coin", "Coin", "Bookmark");
+    E.beginTurn(g);
+    assert(!g.turn.hand.includes(ID.Bookmark));
+    assert.strictEqual(g.turn.hand.length, 4);
+    assert.strictEqual(p.extraDraw, 1);
+    human.end(g);
+    assert(p.discard.includes(ID.Bookmark));
+    g.current = 0;
+    E.beginTurn(g);
+    assert.strictEqual(g.turn.hand.length, 6);
+    assert.strictEqual(p.extraDraw, 0);
+  },
+  "tycoon counts coins from unique cards"() {
+    const g = game(["coinplay", "acts"], { uniq: true }, { perks: ["coinplay"], pos: 7 });
+    turn(g, h("Gold Bar", "Scout"));
+    human.special(g, ID["Gold Bar"]);
+    human.move(g, ID.Scout);
+    assert.strictEqual(g.turn.state[S.PAY], 2 + 3 * 3);
+  },
+  "unplayed unique cards do not bank coins"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    turn(g, h("Tithe", "Gold Bar", "Smuggler"));
+    human.end(g);
+    assert.strictEqual(g.players[0].coins, 0);
+  },
+  "a free buy during a card prompt does not move you"() {
+    const g = game(["moves", "dist"], { tiles: "SMRBMV", buyFree: true, freeAction: false, uniq: true }, { pos: 3, coins: 9 });
+    g.market.face = h("Courier", "Express", "Merchant");
+    turn(g, h("Joker"));
+    assert(human.buyCard(g, { via: "freebuy" }, 0));
+    assert.strictEqual(g.turn.state[S.POS], 3);
+  },
+  "undo restores a unique card"() {
+    const g = game(["moves", "dist"], { uniq: true });
+    turn(g, h("Tithe"));
+    human.special(g, ID.Tithe);
+    assert(human.undo(g));
+    assert.deepStrictEqual(g.turn.state[S.H], h("Tithe"));
+    assert.strictEqual(g.turn.state[S.COINS], 0);
+  },
   "undo restores the turn"() {
     const g = game(["moves", "dist"], null, { pos: 1 });
     turn(g, h("Scout"));
@@ -276,7 +488,7 @@ const checks = {
   },
   "bots of every level finish a game, in every version shape"() {
     for (const kind of ["casual", "std", "expert"]) {
-      for (const cfg of [{}, { tiles: "SMRCMV", buyAny: true }, { tiles: "SMRBMV", buyFree: true, freeAction: false }]) {
+      for (const cfg of [{}, { uniq: true }, { tiles: "SMRCMV", buyAny: true, uniq: true }, { tiles: "SMRBMV", buyFree: true, freeAction: false, uniq: true }]) {
         const g = E.newGame(Object.assign({}, CFG, cfg), [0, 1, 2, 3].map((i) => ({ name: "B" + i, kind })), 3);
         E.playBots(g);
         assert(g.over);

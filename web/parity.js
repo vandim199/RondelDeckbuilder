@@ -1,4 +1,4 @@
-/* Plays the browser engine's bots at scale, to compare with sim/results/lab_v2.json.
+/* Plays the browser engine's bots at scale, to compare with sim/results/lab_v2_cards.json.
    Run: node parity.js [games]. */
 const fs = require("fs");
 const path = require("path");
@@ -6,7 +6,7 @@ const E = require("./engine.js");
 const VERSIONS = require("./versions.js");
 
 const GAMES = Number(process.argv[2] || 3000);
-const py = JSON.parse(fs.readFileSync(path.join(__dirname, "../sim/results/lab_v2.json"), "utf8"));
+const py = JSON.parse(fs.readFileSync(path.join(__dirname, "../sim/results/lab_v2_cards.json"), "utf8"));
 
 function matchup(cfg, kinds, games, seedBase) {
   const wins = [0, 0, 0, 0];

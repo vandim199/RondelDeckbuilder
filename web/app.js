@@ -4,7 +4,7 @@
   const E = window.KineticEngine;
   const VERSIONS = window.KE_VERSIONS;
   const { CARDS, PERKS, SPACES, S, human } = E;
-  const SAVE_KEY = "kinetic-engine-save-v2";
+  const SAVE_KEY = "kinetic-engine-save-v3";
   const SETUP_KEY = "kinetic-engine-setup-v1";
   const KIND_LABEL = { human: "Human", casual: "Casual bot", std: "Standard bot", expert: "Expert bot" };
   const SPEED = { slow: 1400, normal: 700, fast: 120 };
@@ -40,7 +40,13 @@
   function perkText(g, perk) { return PERKS[perk].text(g.cfg.values[perk]); }
   function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
   function humans(g) { return g.players.filter((p) => p.kind === "human"); }
-  function cardClass(c) { const k = CARDS[c]; return k.mv ? "mv" : k.coin ? "coin" : k.act ? "act" : "draw"; }
+  function cardClass(c) {
+    const k = CARDS[c];
+    if (k.mv || k.cat.startsWith("mv")) return "mv";
+    if (k.coin || k.cat === "coin" || k.cat === "cargo" || k.cat === "vp") return "coin";
+    if (k.act || k.cat === "act" || k.cat === "trash") return "act";
+    return "draw";
+  }
   function versionOf(g) { return VERSIONS.find((v) => v.id === g.versionId) || VERSIONS[0]; }
 
   // ------------------------------------------------------------ the dial
@@ -272,6 +278,9 @@
     else bits.push("stayed put");
     if (s.crossed) bits.push(`crossed for ${s.pay} VP`);
     if (s.mined) bits.push(`mined ${s.mined} iron`);
+    if (s.bonus) bits.push(`scored ${s.bonus} VP with Victory Lap`);
+    if (s.ambush) bits.push("played an Ambush, so everyone else draws 1 fewer next turn");
+    (s.played || []).filter((c) => !["Ambush", "Victory Lap"].includes(CARDS[c].name)).forEach((c) => bits.push(`played ${CARDS[c].name}`));
     s.perks.forEach((x) => bits.push(`bought the ${PERKS[x].name} perk`));
     s.bought.forEach((c) => bits.push(`bought ${CARDS[c].name}`));
     if (s.trashed.length) bits.push(`trashed ${s.trashed.map((c) => CARDS[c].name).join(" and ")}`);
@@ -317,14 +326,15 @@
       <p>Each turn you draw 5 cards and play them in any order. Cards that draw fire as soon as you draw them.</p>
       <ul>
         <li><b>Movement cards</b> move your pawn forward. Pawns can share a space.</li>
-        <li><b>Coin cards</b> add coins. Any you do not play bank at the end of your turn, and they are safe from Customs while in your hand.</li>
+        <li><b>Coin cards</b> add coins. Any you do not play bank at the end of your turn, and they are safe from Customs while in your hand. Other cards that give coins only do so if you play them.</li>
         <li><b>Contract</b> uses the space you are on, then moves you 1. Foreman does that twice. <b>Layover</b> uses the space and you stay there.</li>
-        ${c.freeAction ? `<li><b>Free action:</b> once you have moved this turn, you can use the space you stopped on for free. This ends your turn, so play your other cards first.</li>` : ""}
+        ${c.freeAction ? `<li><b>Free action:</b> you can use the space you are on for free, whether or not you moved this turn. This ends your turn, so play your other cards first.</li>` : ""}
         ${c.buyAny ? `<li><b>Buy anywhere:</b> once per turn you can buy a card or perk from any space, for free. That uses your one free thing this turn.</li>` : ""}
         ${c.buyFree ? `<li><b>Bazaars:</b> once per turn you can buy at a Bazaar without a Contract, and you do not step forward.</li>` : ""}
         <li><b>Crossing the line</b> scores ${c.baseLap === undefined ? E.BASE_LAP : c.baseLap} VP plus ${c.payBest ? "your best perk" : "every perk you own"}, once per turn.</li>
         <li><b>Customs</b> then sells all your iron for ${E.IRON_VALUE} coins each and discards your coins down to ${E.COIN_CAP}. Owning Foundry lets you keep up to ${E.FOUNDRY_KEEP} iron.</li>
         <li><b>Iron</b> spends as ${E.IRON_VALUE} coins with no change given.</li>
+        <li><b>A smaller hand:</b> however many Ambushes hit you, you always draw at least 3 cards.</li>
         <li><b>Trashing</b> removes cards from your deck for good. There is no minimum deck size, so trash with care.</li>
         <li>When anyone reaches ${c.threshold} VP, finish the round. Most VP wins, then most money.</li>
       </ul></div></details>`;
@@ -341,11 +351,30 @@
     const tokens = human.tokens(g);
     let note = "", act = "", disabled = false;
     if (done(st)) disabled = true;
-    else if (ui.token && ui.token.mode === "trash") {
-      const pickable = ui.token.via !== "card" || handCountAfterToken(st, c) > ui.trashPick.filter((x) => x === c).length;
+    else if (ui.token && ui.token.mode === "joker") {
+      disabled = true;
+    } else if (ui.token && (ui.token.mode === "salvage" || ui.token.mode === "remodel")) {
+      if (ui.token.mode === "remodel" && ui.token.pick !== undefined) {
+        disabled = true;
+        note = c === ui.token.pick ? "Trading this in" : "";
+      } else if (handCountAfterToken(st, c) > 0) {
+        act = "special-pick";
+        note = ui.token.mode === "salvage" ? `Sell for ${k.cost + 1}` : `Up to cost ${human.remodelCap(c)}`;
+      } else {
+        disabled = true;
+        note = `Playing this ${k.name}`;
+      }
+    } else if (ui.token && ui.token.mode === "trash") {
+      const pickedSame = ui.trashPick.filter((x) => st[S.H][x] === c && x !== i).length;
+      const pickable = handCountAfterToken(st, c) > pickedSame;
       act = "trash-card";
       note = ui.trashPick.includes(i) ? "Selected" : "Tap to trash";
       if (!pickable) disabled = true;
+    } else if (k.spec) {
+      const info = human.specialInfo(g, c);
+      note = info.note;
+      if (info.ok) act = "play-special";
+      else disabled = true;
     } else if (k.mv) {
       const next = human.previewMove(g, c);
       act = "play-move";
@@ -385,8 +414,7 @@
       const buttons = [];
       if (pend) buttons.push(`<button class="signal" id="use-pend" data-act="use-token" data-via="pend">Foreman's second action: ${esc(label)}</button>`);
       if (free) buttons.push(`<button class="signal" id="use-free" data-act="use-token" data-via="free">Free action: ${esc(label)} (ends turn)</button>`);
-      extra = buttons.length ? `<div class="row">${buttons.join("")}</div>` : (g.cfg.freeAction && !st[S.MOVED]
-        ? `<p class="small muted">Move first to use this space for free, or play a Contract or Layover.</p>` : "");
+      extra = buttons.length ? `<div class="row">${buttons.join("")}</div>` : "";
       if (human.freeBuyOpen(g)) extra += `<p class="small">Buy one card or perk below for free. You stay on this space.</p>`;
       return `<p><b>${name}:</b> ${esc(sp.text)}.</p>${extra}`;
     }
@@ -396,6 +424,7 @@
   function turnTitle(p) { return p.name.toLowerCase() === "you" ? "Your turn" : `${p.name}'s turn`; }
 
   function buyMode(g) { return ui.token && ui.token.mode === "buy"; }
+  function remodelTarget() { return ui.token && ui.token.mode === "remodel" && ui.token.pick !== undefined ? human.remodelCap(ui.token.pick) : null; }
 
   function marketPanel(g, st) {
     const buying = buyMode(g);
@@ -404,6 +433,14 @@
     const cards = g.market.face.map((c, i) => {
       const k = CARDS[c];
       const bought = st[S.BOUGHT].includes(i);
+      const cap = remodelTarget();
+      if (cap !== null) {
+        const fits = !bought && k.cost <= cap;
+        return `<button class="card ${cardClass(c)}" id="market${i}" data-act="${fits ? "remodel-card" : ""}" data-slot="${i}" ${fits ? "" : "disabled"}>
+        <span class="row between"><span class="cname">${k.name}</span><span class="price num">${k.cost}</span></span>
+        <span class="ctext">${esc(k.text)}</span>
+        <span class="cnote">${bought ? "Bought" : fits ? "Take for free" : `Costs more than ${cap}`}</span></button>`;
+      }
       const can = (buying || freeBuy) && !bought && funds >= k.cost;
       return `<button class="card ${cardClass(c)}" id="market${i}" data-act="${can ? "buy-card" : ""}" data-slot="${i}" ${can ? "" : "disabled"}>
         <span class="row between"><span class="cname">${k.name}</span><span class="price num">${k.cost}</span></span>
@@ -467,10 +504,21 @@
       const left = st[S.H];
       const trashMode = ui.token && ui.token.mode === "trash";
       const buying = buyMode(g);
+      const cancel = `<button id="cancel" data-act="cancel-token">Cancel</button>`;
+      let specialBanner = "";
+      if (ui.token && ui.token.mode === "joker") {
+        specialBanner = `<div class="row"><b>Joker:</b><button class="signal" id="joker-coin" data-act="joker" data-which="0">+1 coin</button><button class="signal" id="joker-move" data-act="joker" data-which="1">Move 1</button>${cancel}</div>`;
+      } else if (ui.token && ui.token.mode === "salvage") {
+        specialBanner = `<div class="row"><b>Choose a card to sell.</b>${cancel}</div>`;
+      } else if (ui.token && ui.token.mode === "remodel") {
+        specialBanner = ui.token.pick === undefined
+          ? `<div class="row"><b>Choose a card to trade in.</b>${cancel}</div>`
+          : `<div class="row"><b>Choose a market card costing up to ${human.remodelCap(ui.token.pick)}.</b>${cancel}</div>`;
+      }
       const crossed = st[S.CROSSED] ? `<span class="stat"><b class="num">+${st[S.PAY]}</b>VP this turn</span>` : "";
       const banner = trashMode
         ? `<div class="row"><b>Choose up to 2 cards to trash.</b><button class="signal" id="confirm-trash" data-act="confirm-trash" ${ui.trashPick.length ? "" : "disabled"}>Trash ${ui.trashPick.length || ""}</button><button id="cancel" data-act="cancel-token">Cancel</button></div>`
-        : buying ? `<div class="row"><b>Choose a card or perk to buy.</b><button id="cancel" data-act="cancel-token">Cancel</button></div>` : spacePrompt(g, st);
+        : specialBanner || (buying ? `<div class="row"><b>Choose a card or perk to buy.</b>${cancel}</div>` : spacePrompt(g, st));
       const hand = left.length
         ? left.map((c, i) => cardButton(g, c, i, st)).join("")
         : `<p class="muted">Your hand is empty.</p>`;
@@ -530,7 +578,7 @@
       return `<tr><td>${r.place}</td><td>${esc(r.name)}</td><td>${r.vp}</td><td>${p.stats.crossings}</td><td>${avg}</td><td>${p.owned}</td><td>${p.plan.map((x) => PERKS[x].name + (p.perks.includes(x) ? "" : " (not bought)")).join(", ")}</td></tr>`;
     }).join("");
     root.innerHTML = `${topbar(g)}<div class="col">
-      <div class="curtain" style="min-height:0;padding-block:16px"><p class="muted">Round ${g.round}</p><h1>${esc(winners.join(" and "))} ${winners.length > 1 ? "win" : "wins"}</h1></div>
+      <div class="curtain" style="min-height:0;padding-block:16px"><p class="muted">Round ${g.round}</p><h1>${esc(winners.join(" and "))} ${winners.length > 1 || winners[0].toLowerCase() === "you" ? "win" : "wins"}</h1></div>
       <div class="table-wrap"><table class="result-table"><thead><tr><th>Place</th><th>Player</th><th>VP</th><th>Crossings</th><th>VP per crossing</th><th>Deck</th><th>Perks</th></tr></thead><tbody>${body}</tbody></table></div>
       <div class="row"><button class="primary" id="again" data-act="again">Play again</button></div>
       ${logPanel(g)}
@@ -557,7 +605,8 @@
   function useToken(token) {
     const g = ui.g;
     const st = g.turn.state;
-    const opt = SPACES[g.cfg.tiles[st[S.POS]]].options[0];
+    const at = token.via === "agent" ? (st[S.POS] + 1) % g.cfg.tiles.length : st[S.POS];
+    const opt = SPACES[g.cfg.tiles[at]].options[0];
     if (!opt) return;
     if (opt.kind === "buy") { ui.token = Object.assign({ mode: "buy" }, token); render(); return; }
     if (opt.kind === "trash") {
@@ -570,8 +619,7 @@
   }
 
   function activeToken() {
-    if (ui.token) return ui.token;
-    return { via: "freebuy" };
+    return ui.token && ui.token.via ? ui.token : { via: "freebuy" };
   }
 
   const ACTIONS = {
@@ -626,6 +674,21 @@
     "play-coin"(el) { if (human.coin(ui.g, Number(el.dataset.card))) afterHumanMove(); },
     "use-card"(el) { useToken({ via: "card", card: Number(el.dataset.card) }); },
     "use-token"(el) { useToken({ via: el.dataset.via }); },
+    "play-special"(el) {
+      const c = Number(el.dataset.card);
+      const spec = CARDS[c].spec;
+      if (spec === "agent") { useToken({ via: "agent", card: c }); return; }
+      if (spec === "joker" || spec === "salvage" || spec === "remodel") { ui.token = { mode: spec, card: c }; render(); return; }
+      if (human.special(ui.g, c)) afterHumanMove();
+    },
+    joker(el) { if (human.special(ui.g, ui.token.card, Number(el.dataset.which))) afterHumanMove(); },
+    "special-pick"(el) {
+      const x = Number(el.dataset.card);
+      if (ui.token.mode === "salvage") { if (human.salvage(ui.g, ui.token.card, x)) afterHumanMove(); return; }
+      ui.token.pick = x;
+      render();
+    },
+    "remodel-card"(el) { if (human.remodel(ui.g, ui.token.card, ui.token.pick, Number(el.dataset.slot))) afterHumanMove(); },
     "cancel-token"() { ui.token = null; ui.trashPick = []; ui.message = ""; render(); },
     "trash-card"(el) {
       const i = Number(el.dataset.index);
