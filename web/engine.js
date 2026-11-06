@@ -6,6 +6,8 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
+  const BASE_LAP = 2, PERK_COST = 6, COIN_CAP = 4, FOUNDRY_KEEP = 2, HAND = 5, TARGET_ROUNDS = 17, IRON_VALUE = 2;
+
   // ------------------------------------------------------------ cards
   const CARDS = [
     { name: "Scout", mv: 1, coin: 0, act: 0, draw: 0, cost: 0, copies: 0, cat: "mv1", val: 1, text: "Move 1" },
@@ -18,7 +20,7 @@
     { name: "Merchant", mv: 0, coin: 2, act: 0, draw: 0, cost: 3, copies: 3, cat: "coin", val: 2.5, text: "+2 coins" },
     { name: "Foreman", mv: 0, coin: 0, act: 2, draw: 0, cost: 6, copies: 3, cat: "act", val: 2, text: "Use a space, move 1, use a space, move 1" },
     { name: "Ledger", mv: 0, coin: 0, act: 0, draw: 2, cost: 4, copies: 3, cat: "draw", val: 2.5, text: "Draw 2 when drawn" },
-    { name: "Wagon", mv: 0, coin: 0, act: 0, draw: 0, cost: 3, copies: 2, cat: "cargo", val: 0.5, cargo: true, text: "Customs lets you keep 2 more" },
+    { name: "Layover", mv: 0, coin: 0, act: 1, draw: 0, cost: 0, copies: 0, cat: "act", val: 2.5, stay: true, text: "Use this space" },
   ];
   const ID = {};
   CARDS.forEach((c, i) => { ID[c.name] = i; });
@@ -27,7 +29,7 @@
   const PERKS = {
     moves: { name: "Caravan", text: (v) => `${fmt(v)} VP per movement card played this turn` },
     last: { name: "Hammer", text: (v) => `${fmt(v)} VP x the value of your last movement card` },
-    iron: { name: "Foundry", text: (v) => `${fmt(v)} VP per iron you hold` },
+    iron: { name: "Foundry", text: (v) => `${fmt(v)} VP per iron you hold. You keep up to ${FOUNDRY_KEEP} iron at Customs` },
     exact: { name: "Bullseye", text: (v) => `${fmt(v)} VP if you land exactly on Start` },
     thin: { name: "Lean Deck", text: (v) => `${fmt(v)} VP per card below 12 in your deck` },
     acts: { name: "Workshop", text: (v) => `${fmt(v)} VP per space action used this turn` },
@@ -53,9 +55,9 @@
     last: { cats: { mv3: 2.2, mv2: 1.2, draw: 1.2, act: 0.6, coin: 0.8 }, t_scout: 2, t_coin: 0.5, thin_to: 7 },
     iron: { cats: { act: 2.2, coin: 1.5, mv3: 0.4, mv2: 0.7 }, miner: true, w_mine: 2, w_fund: 0.4, thin_to: 10, max_deck: 14, t_coin: 0, t_scout: 0 },
     exact: { cats: { mv1: 1.3, mv2: 1.2, draw: 1.6 }, w_line: 0.5, t_coin: 1, t_scout: 0 },
-    thin: { cats: { draw: 0.5, mv3: 1.6, coin: 0.8, act: 0.7 }, thin_to: 6, max_deck: 8, t_scout: 2, t_coin: 1.5, min_coins: 1, w_ref: 2.5 },
+    thin: { cats: { draw: 0.5, mv3: 1.6, coin: 0.8, act: 0.7 }, thin_to: 4, max_deck: 8, t_scout: 2, t_coin: 1.5, min_moves: 2, min_coins: 0, w_ref: 2.5 },
     acts: { cats: { act: 3, mv2: 0.8, draw: 1.2 }, w_mine: 1, t_coin: 0.5 },
-    purge: { cats: { trash: 3, coin: 0.9, mv3: 1.2 }, thin_to: 6, max_deck: 12, t_scout: 3, t_coin: 3, t_pony: 1, w_ref: 3, min_coins: 1 },
+    purge: { cats: { trash: 3, coin: 0.9, mv3: 1.2 }, thin_to: 4, max_deck: 12, t_scout: 3, t_coin: 3, t_pony: 1, w_ref: 3, min_moves: 2, min_coins: 0 },
     bulk: { cats: { coin: 1.3, mv2: 1.2, mv3: 1.2, act: 1.2, draw: 1.2, mv1: 1.3 }, max_deck: 30, thin_to: 99, t_scout: 0, t_coin: 0, w_bazaar: 3, w_fund: 0.5 },
     dist: { cats: { mv3: 2.2, mv2: 1.6, draw: 1.3, act: 0.5, coin: 0.7 }, w_move: 1.5, t_scout: 1 },
     kinds: { diverse: true, max_deck: 14, t_scout: 0, t_coin: 0 },
@@ -89,14 +91,13 @@
 
   // ------------------------------------------------------------ versions and board
   const SPACES = {
-    S: { name: "Customs", text: "Start line. Crossing scores VP, then Customs keeps 1 type, up to 2", options: [] },
+    S: { name: "Customs", text: `Start line. Crossing scores VP, then Customs sells your iron for ${IRON_VALUE} coins each and discards coins down to ${COIN_CAP}`, options: [] },
     V: { name: "Tailwind", text: "Move 2", options: [{ kind: "move", n: 2 }] },
     M: { name: "Mine", text: "Gain 2 iron", options: [{ kind: "iron", n: 2 }] },
     R: { name: "Refinery", text: "Trash up to 2 cards from hand", options: [{ kind: "trash", n: 2 }] },
     B: { name: "Bazaar", text: "Buy a card or a perk", options: [{ kind: "buy" }] },
     C: { name: "Exchange", text: "Gain 2 coins", options: [{ kind: "coin", n: 2 }] },
   };
-  const BASE_LAP = 2, PERK_COST = 6, KEEP = 2, HAND = 5, MIN_DECK = 6, TARGET_ROUNDS = 17, IRON_VALUE = 2;
   const CASUAL_SIGMA = 1, CASUAL_LINES = 40;
   const F_FREE = 1, F_DONE = 2;
 
@@ -152,10 +153,10 @@
     g.market.pile = pile;
     const pool = shuffle(cfg.pool.slice(), g, "rngS");
     seats.forEach((seat, i) => {
-      const deck = [ID.Scout, ID.Scout, ID.Scout, ID.Scout, ID.Pony, ID.Coin, ID.Coin, ID.Coin, ID.Coin, ID.Contract];
+      const deck = [ID.Scout, ID.Scout, ID.Scout, ID.Scout, ID.Pony, ID.Coin, ID.Coin, ID.Coin, ID.Coin, ID.Contract, ID.Layover];
       const p = { seat: i, name: seat.name, kind: seat.kind, rngS: (seed | 0) * 1000 + i, noiseS: (seed | 0) * 5000 + i + (options.noiseOffset || 0) * 977,
         offers: pool.slice(i * 3, (i + 1) * 3), plan: [], style: null, perks: [], pos: 0, deck, discard: [], vp: 0, coins: 0, iron: 0, owned: deck.length,
-        movesOwned: 5, coinsOwned: 4, cargo: 0, trashedTotal: 0, buysSince: 0, turnsSince: 0, idle: 0, have: {}, jitter: [],
+        movesOwned: 5, coinsOwned: 4, trashedTotal: 0, buysSince: 0, turnsSince: 0, idle: 0, have: {}, jitter: [],
         stats: { turns: 0, crossings: 0, pay: 0, dead: 0, stay: 0, moved: 0, options: 0, goal: 0, bought: 0, trashed: 0 } };
       deck.forEach((c) => { p.have[c] = (p.have[c] || 0) + 1; });
       shuffle(p.deck, p, "rngS");
@@ -198,12 +199,13 @@
     return occ;
   }
 
-  function customs(coins, iron, limit) {
-    const keepCoins = Math.min(coins, limit), keepIron = Math.min(iron, limit) * IRON_VALUE;
-    const total = coins + iron * IRON_VALUE;
-    if (keepIron > keepCoins) return [0, Math.min(iron, limit), total - keepIron];
-    return [keepCoins, 0, total - keepCoins];
+  /* Sells iron for coins, except any Foundry keeps, then discards coins down to the cap. Returns [coins, iron, coins lost]. */
+  function customs(coins, iron, keepIron) {
+    const kept = Math.min(iron, keepIron);
+    const total = coins + (iron - kept) * IRON_VALUE;
+    return [Math.min(total, COIN_CAP), kept, Math.max(0, total - COIN_CAP)];
   }
+  function ironKept(p, st) { return p.perks.includes("iron") || st[NEW].includes("iron") ? FOUNDRY_KEEP : 0; }
 
   function popcount(x) { let n = 0; while (x) { x &= x - 1; n++; } return n; }
 
@@ -251,7 +253,7 @@
     return { total: total + best, parts };
   }
 
-  function advance(g, p, st, k, isCard, value, occ, limit) {
+  function advance(g, p, st, k, isCard, value, occ) {
     const n = g.cfg.tiles.length;
     let node = st[POS], cross = 0, passed = 0;
     for (let left = k; left > 0; left--) {
@@ -269,7 +271,7 @@
         l[PAY] = payout(g, p, p.perks.concat(l[NEW]), node, l).total;
         l[BOUGHT_AT_CROSS] = l[BOUGHT].length;
       }
-      const c = customs(l[COINS], l[IRON], limit);
+      const c = customs(l[COINS], l[IRON], ironKept(p, l));
       l[COINS] = c[0]; l[IRON] = c[1]; l[LOST] += c[2];
     }
     l[POS] = node;
@@ -320,21 +322,19 @@
       slot[i] = v; cost[i] = CARDS[c].cost;
       if (v > 0) shop.push(i);
     });
-    return { slot, cost, shop, wanted: p.plan.filter((x) => !p.perks.includes(x)), trash: trashValues(p), limit: KEEP + p.cargo,
+    return { slot, cost, shop, wanted: p.plan.filter((x) => !p.perks.includes(x)), trash: trashValues(p),
       trackPlayed: p.plan.includes("moves"), trackLast: p.plan.includes("last"), trackKinds: p.plan.includes("kinds"),
       occ: g._occ || occupancy(g, p) };
   }
 
   function trashPicks(g, p, h, trashed, ctx, n) {
     const q = p.style, tv = ctx.trash;
-    const room = p.owned - trashed.length - MIN_DECK;
-    if (room <= 0) return [];
     let moves = p.movesOwned, coins = p.coinsOwned;
     trashed.forEach((c) => { if (CARDS[c].mv) moves--; if (CARDS[c].coin) coins--; });
     const picks = [];
     const sorted = h.slice().sort((a, b) => (tv[b] || 0) - (tv[a] || 0));
     for (const c of sorted) {
-      if (picks.length === n || picks.length === room) break;
+      if (picks.length === n) break;
       if ((tv[c] || 0) <= 0) continue;
       if (CARDS[c].mv && moves <= q.min_moves) continue;
       if (CARDS[c].coin && coins <= q.min_coins) continue;
@@ -358,7 +358,7 @@
     l[H] = removeOne(st[H], c);
     trackedCard(st, ctx, c, l);
     const mv = CARDS[c].mv;
-    const moved = advance(g, p, l, mv, true, mv, ctx.occ, ctx.limit);
+    const moved = advance(g, p, l, mv, true, mv, ctx.occ);
     if (!ctx.trackPlayed) moved[PLAYED] = st[PLAYED];
     if (!ctx.trackLast) moved[LAST] = st[LAST];
     return moved;
@@ -422,13 +422,13 @@
     for (const opt of SPACES[tile].options) {
       if (opt.kind === "iron") { const l = st.slice(); l[IRON] += opt.n; l[MINES] += 1; out.push(l); }
       else if (opt.kind === "coin") { const l = st.slice(); l[COINS] += opt.n; out.push(l); }
-      else if (opt.kind === "move") out.push(advance(g, p, st, opt.n, false, 0, ctx.occ, ctx.limit));
+      else if (opt.kind === "move") out.push(advance(g, p, st, opt.n, false, 0, ctx.occ));
       else if (opt.kind === "trash") {
         const picks = trashPicks(g, p, st[H], st[TRASHED], ctx, opt.n);
         if (picks.length) out.push(trashState(st, picks));
       } else if (opt.kind === "buy") out = out.concat(buyOpts(g, p, st, ctx));
     }
-    if (step) return out.map((s) => advance(g, p, s, 1, false, 0, ctx.occ, ctx.limit));
+    if (step) return out.map((s) => advance(g, p, s, 1, false, 0, ctx.occ));
     return out;
   }
 
@@ -457,7 +457,7 @@
           l[PEND] = CARDS[c].act - 1;
           l[ACTS] += 1;
           trackedCard(st, ctx, c, l);
-          out = out.concat(localOpts(g, p, l, ctx, true));
+          out = out.concat(localOpts(g, p, l, ctx, !CARDS[c].stay));
         }
       }
     }
@@ -499,7 +499,8 @@
     const dB = d.B === undefined ? 99 : d.B;
     let safe = funds;
     if (!cfg.buyAny && dl < dB) {
-      const kept = Math.max(Math.min(fc, ctx.limit), Math.min(iron, ctx.limit) * IRON_VALUE);
+      const keep = Math.min(iron, ironKept(p, st));
+      const kept = Math.min(fc + (iron - keep) * IRON_VALUE, COIN_CAP) + keep * IRON_VALUE;
       safe = kept + 0.1 * (funds - kept);
     }
     const restless = p.idle >= q.max_wait;
@@ -749,7 +750,6 @@
       p.owned++;
       if (CARDS[c].mv) p.movesOwned++;
       if (CARDS[c].coin) p.coinsOwned++;
-      if (CARDS[c].cargo) p.cargo += 2;
       p.have[c] = (p.have[c] || 0) + 1;
       if (!g.buysThisRound.includes(0)) g.buysThisRound.push(0);
       if (g.market.pile.length) g.market.face.push(g.market.pile.pop());
@@ -802,7 +802,7 @@
   function humanCtx(g) {
     const p = g.players[g.current];
     const plan = p.plan;
-    return { slot: [], cost: [], shop: [], wanted: plan.filter((x) => !p.perks.includes(x)), trash: {}, limit: KEEP + p.cargo,
+    return { slot: [], cost: [], shop: [], wanted: plan.filter((x) => !p.perks.includes(x)), trash: {},
       trackPlayed: true, trackLast: true, trackKinds: true, occ: g._occ || occupancy(g, p) };
   }
   function done(g) { return !!(g.turn.state[FLAGS] & F_DONE); }
@@ -855,7 +855,8 @@
       if (!s) return false;
       const p = g.players[g.current];
       const ctx = humanCtx(g);
-      const next = token.via === "free" || token.via === "freebuy" ? s : advance(g, p, s, 1, false, 0, ctx.occ, ctx.limit);
+      const stays = token.via === "free" || token.via === "freebuy" || (token.via === "card" && CARDS[token.card].stay);
+      const next = stays ? s : advance(g, p, s, 1, false, 0, ctx.occ);
       return pushHuman(g, next);
     },
     simple(g, token) { // Mine, Tailwind or Exchange
@@ -865,14 +866,12 @@
       let s = null;
       if (opt.kind === "iron") { s = l; s[IRON] += opt.n; s[MINES] += 1; }
       else if (opt.kind === "coin") { s = l; s[COINS] += opt.n; }
-      else if (opt.kind === "move") s = advance(g, p, l, opt.n, false, 0, ctx.occ, ctx.limit);
+      else if (opt.kind === "move") s = advance(g, p, l, opt.n, false, 0, ctx.occ);
       return this._finish(g, token, s);
     },
     trash(g, token, cards) {
-      const p = g.players[g.current];
       if (!cards.length || cards.length > 2) return false;
       const { l } = this._paid(g, token);
-      if (p.owned - l[TRASHED].length - cards.length < MIN_DECK) return false;
       let h = l[H].slice();
       for (const c of cards) {
         const i = h.indexOf(c);
@@ -922,7 +921,7 @@
     return g;
   }
 
-  return { CARDS, ID, PERKS, SPACES, STYLES, BASE_LAP, PERK_COST, MIN_DECK, KEEP, HAND, IRON_VALUE, TARGET_ROUNDS, F: { FREE: F_FREE, DONE: F_DONE },
+  return { CARDS, ID, PERKS, SPACES, STYLES, BASE_LAP, PERK_COST, COIN_CAP, FOUNDRY_KEEP, HAND, IRON_VALUE, TARGET_ROUNDS, F: { FREE: F_FREE, DONE: F_DONE },
     S: { POS, H, PEND, COINS, IRON, MOVED, CROSSED, PAY, BOUGHT, TRASHED, PLAYED, LAST, ACTS, LOST, NEW, KINDS, FLAGS, PASSED, MINES, HCOIN },
     fmt, newGame, setPlan, botPickPerks, beginTurn, botPlan, commitTurn, playBots, human, standings, payout, revive, startState, expand, makeCtx, boardOf, customs, payCoin, advance };
 });

@@ -15,7 +15,6 @@
   --coin: #b98500;
   --act: #b5401f;
   --draw: #16807f;
-  --cargo: #6c5a99;
   --tile-s: #14283b;
   --tile-m: #6d7f8e;
   --tile-r: #a65a2e;
@@ -34,14 +33,14 @@
   :root:not([data-theme="light"]) {
     --paper: #0f1d2b; --desk: #182a3c; --ink: #e8eef2; --muted: #a0b2c0; --line: #33495c; --enamel: #3a78c2; --on-enamel: #ffffff;
     --signal: #f2b41b; --on-signal: #14283b; --danger: #ff8a73; --good: #5fd0a4; --move: #6aa9ec; --coin: #e6b534; --act: #f0815c;
-    --draw: #4fc4c0; --cargo: #b19fe0; --tile-s: #d9e3ea; --tile-m: #6d7f8e; --tile-r: #a65a2e; --tile-b: #b98500; --tile-v: #2467b0; --tile-c: #16807f;
+    --draw: #4fc4c0; --tile-s: #d9e3ea; --tile-m: #6d7f8e; --tile-r: #a65a2e; --tile-b: #b98500; --tile-v: #2467b0; --tile-c: #16807f;
     --p0: #ff6a50; --p1: #35c2c8; --p2: #a98bf0; --p3: #f2a53a; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #0f1d2b; --desk: #182a3c; --ink: #e8eef2; --muted: #a0b2c0; --line: #33495c; --enamel: #3a78c2; --on-enamel: #ffffff;
   --signal: #f2b41b; --on-signal: #14283b; --danger: #ff8a73; --good: #5fd0a4; --move: #6aa9ec; --coin: #e6b534; --act: #f0815c;
-  --draw: #4fc4c0; --cargo: #b19fe0; --tile-s: #d9e3ea; --tile-m: #6d7f8e; --tile-r: #a65a2e; --tile-b: #b98500; --tile-v: #2467b0; --tile-c: #16807f;
+  --draw: #4fc4c0; --tile-s: #d9e3ea; --tile-m: #6d7f8e; --tile-r: #a65a2e; --tile-b: #b98500; --tile-v: #2467b0; --tile-c: #16807f;
   --p0: #ff6a50; --p1: #35c2c8; --p2: #a98bf0; --p3: #f2a53a; color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -156,7 +155,6 @@ button.signal:hover:not(:disabled) { background: var(--signal); filter: brightne
 .card.coin { --c: var(--coin); }
 .card.act { --c: var(--act); }
 .card.draw { --c: var(--draw); }
-.card.cargo { --c: var(--cargo); }
 .card .cname { font-family: var(--display); font-size: 21px; font-weight: 800; text-transform: uppercase; line-height: 1; }
 .card .ctext { font-size: 13px; line-height: 1.25; }
 .card .cnote { font-size: 13px; font-weight: 700; color: var(--c); }

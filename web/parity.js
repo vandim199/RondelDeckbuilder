@@ -1,4 +1,4 @@
-/* Plays the browser engine's bots at scale, to compare with sim/results/lab_perks_app.json.
+/* Plays the browser engine's bots at scale, to compare with sim/results/lab_v2.json.
    Run: node parity.js [games]. */
 const fs = require("fs");
 const path = require("path");
@@ -6,8 +6,7 @@ const E = require("./engine.js");
 const VERSIONS = require("./versions.js");
 
 const GAMES = Number(process.argv[2] || 3000);
-const KEYS = { race8: "FREEACT+SLOTS2+T8", sprint6: "BUY_FREE+SLOTS2+T6" };
-const py = JSON.parse(fs.readFileSync(path.join(__dirname, "../sim/results/lab_perks_app.json"), "utf8"));
+const py = JSON.parse(fs.readFileSync(path.join(__dirname, "../sim/results/lab_v2.json"), "utf8"));
 
 function matchup(cfg, kinds, games, seedBase) {
   const wins = [0, 0, 0, 0];
@@ -37,7 +36,7 @@ for (const v of VERSIONS) {
       p.plan.forEach((perk) => { holds[perk] = (holds[perk] || 0) + 1; won[perk] = (won[perk] || 0) + w; });
     });
   }
-  const s = py[KEYS[v.id]];
+  const s = py[v.sim];
   const row = (label, a, b) => console.log(`  ${label.padEnd(18)} browser ${a.toFixed(2).padStart(7)}   simulator ${b.toFixed(2).padStart(7)}`);
   console.log(`\n${v.name} (${GAMES} games)`);
   row("rounds", rounds / GAMES, s.rounds);

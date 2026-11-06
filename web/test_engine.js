@@ -38,14 +38,53 @@ const checks = {
     human.move(g, ID.Courier);
     assert.strictEqual(g.turn.state[S.PAY], 2 + 2 + 2);
   },
-  "customs keeps the more valuable type, up to 2"() {
-    const g = game(["moves", "dist"], null, { pos: 7, coins: 5, iron: 3 });
+  "customs sells all iron for 2 coins each, then discards coins down to 4"() {
+    const g = game(["moves", "dist"], null, { pos: 7, coins: 1, iron: 1 });
     turn(g, h("Scout"));
     human.move(g, ID.Scout);
-    assert.strictEqual(g.turn.state[S.COINS], 0);
+    assert.strictEqual(g.turn.state[S.COINS], 3);
+    assert.strictEqual(g.turn.state[S.IRON], 0);
+    assert.strictEqual(g.turn.state[S.LOST], 0);
+    const g2 = game(["moves", "dist"], null, { pos: 7, coins: 5, iron: 3 });
+    turn(g2, h("Scout"));
+    human.move(g2, ID.Scout);
+    assert.strictEqual(g2.turn.state[S.COINS], 4);
+    assert.strictEqual(g2.turn.state[S.IRON], 0);
+    assert.strictEqual(g2.turn.state[S.LOST], 7);
+  },
+  "owning foundry keeps up to 2 iron at customs and scores all iron first"() {
+    const g = game(["iron", "acts"], null, { perks: ["iron"], pos: 7, coins: 0, iron: 3 });
+    turn(g, h("Scout"));
+    human.move(g, ID.Scout);
+    assert.strictEqual(g.turn.state[S.PAY], 2 + 2 * 3);
     assert.strictEqual(g.turn.state[S.IRON], 2);
-    assert.deepStrictEqual(E.customs(5, 0, 2).slice(0, 2), [2, 0]);
-    assert.deepStrictEqual(E.customs(5, 0, 4).slice(0, 2), [4, 0]);
+    assert.strictEqual(g.turn.state[S.COINS], 2);
+    const unowned = game(["iron", "acts"], null, { pos: 7, iron: 3 });
+    turn(unowned, h("Scout"));
+    human.move(unowned, ID.Scout);
+    assert.strictEqual(unowned.turn.state[S.IRON], 0);
+  },
+  "the deck starts with 11 cards including layover, and wagon is gone"() {
+    const g = game(["moves", "dist"]);
+    assert.strictEqual(g.players[0].owned, 11);
+    assert.strictEqual(g.players[0].have[ID.Layover], 1);
+    assert.strictEqual(ID.Wagon, undefined);
+    assert(!g.market.face.concat(g.market.pile).includes(ID.Layover));
+  },
+  "layover uses the space and stays, and does nothing at customs"() {
+    const g = game(["moves", "dist"], null, { pos: 2 });
+    turn(g, h("Layover"));
+    assert(human.simple(g, human.tokens(g)[0]));
+    assert.strictEqual(g.turn.state[S.IRON], 2);
+    assert.strictEqual(g.turn.state[S.POS], 2);
+    assert.strictEqual(g.turn.state[S.ACTS], 1);
+    const g2 = game(["moves", "dist"], null, { pos: 0 });
+    turn(g2, h("Layover"));
+    assert.strictEqual(human.tokens(g2).length, 0);
+    const g3 = game(["moves", "dist"], null, { pos: 4, coins: 6 });
+    turn(g3, h("Layover"));
+    assert(human.buyPerk(g3, human.tokens(g3)[0], "moves"));
+    assert.strictEqual(g3.turn.state[S.POS], 4);
   },
   "only the first crossing in a turn pays"() {
     const g = game(["moves", "dist"], { tiles: "SMRB" }, { perks: ["moves"], pos: 3 });
@@ -119,13 +158,18 @@ const checks = {
     assert.strictEqual(g.turn.state[S.COINS], 0);
     assert.deepStrictEqual(g.turn.state[S.NEW], ["moves"]);
   },
-  "trash obeys the minimum deck"() {
-    const g = game(["moves", "dist"], null, { pos: 3, owned: 7 });
+  "there is no minimum deck, and an empty deck can still take turns"() {
+    const g = game(["moves", "dist"], null, { pos: 3, owned: 2 });
     turn(g, h("Contract", "Scout", "Coin"));
-    const t = human.tokens(g)[0];
-    assert.strictEqual(human.trash(g, t, h("Scout", "Coin")), false);
-    assert(human.trash(g, t, h("Scout")));
-    assert.deepStrictEqual(g.turn.state[S.TRASHED], h("Scout"));
+    assert(human.trash(g, human.tokens(g)[0], h("Scout", "Coin")));
+    assert.deepStrictEqual(g.turn.state[S.TRASHED], h("Scout", "Coin"));
+    const g2 = game(["moves", "dist"]);
+    const p = g2.players[0];
+    p.deck = []; p.discard = []; p.owned = 0; p.have = {};
+    E.beginTurn(g2);
+    assert.strictEqual(g2.turn.hand.length, 0);
+    human.end(g2);
+    assert.strictEqual(g2.current, 1);
   },
   "each perk pays as its card says"() {
     const cases = [
@@ -238,7 +282,7 @@ const checks = {
         assert(g.over);
         g.players.forEach((p) => {
           assert.strictEqual(p.deck.length + p.discard.length, p.owned);
-          assert(p.owned >= E.MIN_DECK);
+          assert(p.owned >= 0);
         });
       }
     }

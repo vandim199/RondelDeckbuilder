@@ -4,7 +4,7 @@
   const E = window.KineticEngine;
   const VERSIONS = window.KE_VERSIONS;
   const { CARDS, PERKS, SPACES, S, human } = E;
-  const SAVE_KEY = "kinetic-engine-save-v1";
+  const SAVE_KEY = "kinetic-engine-save-v2";
   const SETUP_KEY = "kinetic-engine-setup-v1";
   const KIND_LABEL = { human: "Human", casual: "Casual bot", std: "Standard bot", expert: "Expert bot" };
   const SPEED = { slow: 1400, normal: 700, fast: 120 };
@@ -40,7 +40,7 @@
   function perkText(g, perk) { return PERKS[perk].text(g.cfg.values[perk]); }
   function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
   function humans(g) { return g.players.filter((p) => p.kind === "human"); }
-  function cardClass(c) { const k = CARDS[c]; return k.mv ? "mv" : k.coin ? "coin" : k.act ? "act" : k.draw ? "draw" : "cargo"; }
+  function cardClass(c) { const k = CARDS[c]; return k.mv ? "mv" : k.coin ? "coin" : k.act ? "act" : "draw"; }
   function versionOf(g) { return VERSIONS.find((v) => v.id === g.versionId) || VERSIONS[0]; }
 
   // ------------------------------------------------------------ the dial
@@ -318,14 +318,14 @@
       <ul>
         <li><b>Movement cards</b> move your pawn forward. Pawns can share a space.</li>
         <li><b>Coin cards</b> add coins. Any you do not play bank at the end of your turn, and they are safe from Customs while in your hand.</li>
-        <li><b>Contract</b> uses the space you are on, then moves you 1. Foreman does that twice.</li>
+        <li><b>Contract</b> uses the space you are on, then moves you 1. Foreman does that twice. <b>Layover</b> uses the space and you stay there.</li>
         ${c.freeAction ? `<li><b>Free action:</b> once you have moved this turn, you can use the space you stopped on for free. This ends your turn, so play your other cards first.</li>` : ""}
         ${c.buyAny ? `<li><b>Buy anywhere:</b> once per turn you can buy a card or perk from any space, for free. That uses your one free thing this turn.</li>` : ""}
         ${c.buyFree ? `<li><b>Bazaars:</b> once per turn you can buy at a Bazaar without a Contract, and you do not step forward.</li>` : ""}
         <li><b>Crossing the line</b> scores ${c.baseLap === undefined ? E.BASE_LAP : c.baseLap} VP plus ${c.payBest ? "your best perk" : "every perk you own"}, once per turn.</li>
-        <li><b>Customs</b> then takes your money: you keep coins or iron, whichever is worth more, up to ${E.KEEP}. Each Wagon you own keeps 2 more.</li>
+        <li><b>Customs</b> then sells all your iron for ${E.IRON_VALUE} coins each and discards your coins down to ${E.COIN_CAP}. Owning Foundry lets you keep up to ${E.FOUNDRY_KEEP} iron.</li>
         <li><b>Iron</b> spends as ${E.IRON_VALUE} coins with no change given.</li>
-        <li><b>Trashing</b> removes cards from your deck for good. A deck cannot go below ${E.MIN_DECK}.</li>
+        <li><b>Trashing</b> removes cards from your deck for good. There is no minimum deck size, so trash with care.</li>
         <li>When anyone reaches ${c.threshold} VP, finish the round. Most VP wins, then most money.</li>
       </ul></div></details>`;
   }
@@ -362,9 +362,6 @@
         disabled = true;
         note = isCustoms(g, st) ? "Nothing to use here" : "";
       }
-    } else if (k.cargo) {
-      disabled = true;
-      note = "Works once owned";
     } else disabled = true;
     const picked = ui.token && ui.token.mode === "trash" && ui.trashPick.includes(i);
     return `<button class="card ${cardClass(c)} ${picked ? "picked" : ""}" id="hand${i}" data-act="${act}" data-card="${c}" data-index="${i}" ${disabled ? "disabled" : ""}>
@@ -389,7 +386,7 @@
       if (pend) buttons.push(`<button class="signal" id="use-pend" data-act="use-token" data-via="pend">Foreman's second action: ${esc(label)}</button>`);
       if (free) buttons.push(`<button class="signal" id="use-free" data-act="use-token" data-via="free">Free action: ${esc(label)} (ends turn)</button>`);
       extra = buttons.length ? `<div class="row">${buttons.join("")}</div>` : (g.cfg.freeAction && !st[S.MOVED]
-        ? `<p class="small muted">Move first to use this space for free, or play a Contract.</p>` : "");
+        ? `<p class="small muted">Move first to use this space for free, or play a Contract or Layover.</p>` : "");
       if (human.freeBuyOpen(g)) extra += `<p class="small">Buy one card or perk below for free. You stay on this space.</p>`;
       return `<p><b>${name}:</b> ${esc(sp.text)}.</p>${extra}`;
     }
@@ -564,8 +561,6 @@
     if (!opt) return;
     if (opt.kind === "buy") { ui.token = Object.assign({ mode: "buy" }, token); render(); return; }
     if (opt.kind === "trash") {
-      const room = g.players[g.current].owned - st[S.TRASHED].length - E.MIN_DECK;
-      if (room <= 0) { ui.message = `Your deck can't go below ${E.MIN_DECK} cards.`; render(); return; }
       ui.token = Object.assign({ mode: "trash" }, token);
       ui.trashPick = [];
       render();
@@ -643,7 +638,6 @@
       const left = g.turn.state[S.H];
       const cards = ui.trashPick.map((i) => left[i]);
       if (human.trash(g, ui.token, cards)) afterHumanMove();
-      else { ui.message = `Your deck can't go below ${E.MIN_DECK} cards. Choose fewer.`; render(); }
     },
     "buy-card"(el) { if (human.buyCard(ui.g, activeToken(), Number(el.dataset.slot))) afterHumanMove(); },
     "buy-perk"(el) { if (human.buyPerk(ui.g, activeToken(), el.dataset.perk)) afterHumanMove(); },
